@@ -1,1 +1,0 @@
-ConfirmCalc.set_path ''
