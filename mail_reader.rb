@@ -84,11 +84,10 @@ module ConfirmCalc
         body = NKF.nkf("-w -m0", body.join("\n").unpack("M*").join)
       end
 
-      products = []
-      price = ""
+      products, price = [], nil
       body.each_line do |line|
-        products << line if line =~ /1 ".*"/
-        price = $1 if NKF.nkf("-w -m0", line) =~ /注文合計：.*?((?:[1-9]\d{0,2})(?:,\d{3})*)/ && price == ""
+        products << line if line[/1 ".*"/,0]
+        price ||= NKF.nkf("-w -m0", line)[/注文合計：.*?((?:(?:0|[1-9]\d{0,2}))(?:,\d{3})*)/,1]
       end
       Product.new(purchased_date, products, price)
     end
@@ -98,11 +97,10 @@ module ConfirmCalc
       return unless purchased_date = get_purchase_date(email)
 
       email.each_line do |line|
-        if line =~ /^Content-Transfer-Encoding: (.*)/
-          transfer_type = $1
+        if transfer_type ||= line[/^Content-Transfer-Encoding: (.*)/, 1] and not flg
           flg = true
           next
-        elsif line =~ /^------=_Part_.*/ and flg
+        elsif line[/^------=_Part_.*/, 0] and flg
           break
         end
         body << line if flg
@@ -112,7 +110,7 @@ module ConfirmCalc
 
     def get_purchase_date(email)
       email.each_line do |line|
-        purchased_date = $1 if line =~ /^Date:\s(.*)/
+        purchased_date ||= line[/^Date:\s(.*)/, 1]
         if purchased_date
           unless is_this_or_before_month_shopping?(purchased_date)
             return nil
