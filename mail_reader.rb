@@ -19,7 +19,7 @@ module ConfirmCalc
         if File.directory?(file)
           next
         else
-          @files << file if file[-4..-1] == "emlx"
+          @files << file if File.extname(file) == ".emlx"
         end
       end
     end
@@ -42,25 +42,29 @@ module ConfirmCalc
     end
 
     def sum_products(products)
-      this_month = month_products(products, Date.today.month)
-      next_month = month_products(products, Date.today.next_month.month)
+      this_month = 0
       print_products = -> month, products {
-        sum = 0
-        products.map { |p| puts p; sum += p.price }
+        sum = products.inject(0) { |s,p| puts p; s + p.price }
         puts "#{month}月支払い合計:#{sum}円"
       }
 
-      print_products.call(Date.today.month, this_month)
-      print_products.call(Date.today.next_month.month, next_month)
-    end
+      if (1..10).include?(Date.today.day)
+        this_month = Date.today.month
+      else
+        this_month = Date.today.month + 1
+      end
 
+      print_products.call(this_month, month_products(products, this_month))
+      print_products.call(this_month+1, month_products(products, this_month+1))
+    end
 
     def month_products(products, pay_month)
       pay_this_month = -> p_date, pay_month {
-        (p_date.month == pay_month and p_date.day < 15) or
-        (p_date.month == pay_month - 1 and p_date.day > 14)
+        (p_date.month == pay_month - 1 and p_date.day < 16) or
+        (p_date.month == pay_month - 2 and p_date.day > 15)
       }
       month_products = []
+
       if Date.today.day < 16
         month_products = products.select do |p|
           pay_this_month.call(p.date, pay_month-1)
@@ -70,6 +74,7 @@ module ConfirmCalc
           pay_this_month.call(p.date, pay_month)
         end
       end
+
       month_products
     end
 
@@ -93,40 +98,48 @@ module ConfirmCalc
     end
 
     def get_email_info(email)
-      purchased_date, transfer_type, flg, body = nil, nil, nil, []
+      purchased_date, transfer_type, body = nil, nil, []
       return unless purchased_date = get_purchase_date(email)
 
       email.each_line do |line|
-        if transfer_type ||= line[/^Content-Transfer-Encoding: (.*)/, 1] and not flg
-          flg = true
+        case line
+        when /^Content-Transfer-Encoding: (.*)/
+          transfer_type = $1
           next
-        elsif line[/^------=_Part_.*/, 0] and flg
-          break
+        when /^------=_Part_.*/
+          break if transfer_type
         end
-        body << line if flg
+        body << line if transfer_type
       end
       [purchased_date, body, transfer_type]
     end
 
     def get_purchase_date(email)
+      purchased_date = nil
       email.each_line do |line|
-        purchased_date ||= line[/^Date:\s(.*)/, 1]
-        if purchased_date
-          unless is_this_or_before_month_shopping?(purchased_date)
-            return nil
-          else
-            return purchased_date
-          end
+        case line
+        when /^Date:\s(.*)/
+          purchased_date = $1
+          break
         end
+      end
+
+      unless is_this_or_before_month_shopping?(purchased_date)
+        return nil
+      else
+        return purchased_date
       end
     end
 
     def is_this_or_before_month_shopping?(purchased_date)
+      return false unless purchased_date
       today = Date.today
       p_date = Date.parse(purchased_date)
-      return false if p_date.year != today.year
-      return false if p_date.month < (today.month - 2)
-      return true
+      if p_date.year != today.year or p_date.month < (today.month - 2)
+        return false
+      else
+        return true
+      end
     end
   end
 
@@ -161,9 +174,6 @@ end
 
 if __FILE__ == $PROGRAM_NAME
   ConfirmCalc.calc_month
-  # path = File.expand_path("~/Library/Mail/V2/AosIMAP-kankankan/amazon-confirm.mbox")
-  # mr = MailReader.new(path)
-  # mr.read_email
 end
 
 
